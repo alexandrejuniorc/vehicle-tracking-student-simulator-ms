@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"math"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -18,11 +20,21 @@ type Route struct {
 	FreightPrice float64
 }
 
+type FreightService struct{}
+
+func (freightService *FreightService) CalculateFreight(distance int) float64 {
+	// FAKE CALCULATION
+	return math.Floor((float64(distance)*0.15+0.3)*100) / 100
+}
+
 type RouteService struct {
-	mongo *mongo.Client
+	mongo          *mongo.Client
+	freightService *FreightService
 }
 
 func (routeService *RouteService) CreateRoute(route Route) (Route, error) {
+	route.FreightPrice = routeService.freightService.CalculateFreight(route.Distance)
+
 	// MONGO UPDATE STATEMENT
 	update := bson.M{
 		"$set": bson.M{
