@@ -59,3 +59,15 @@ func (routeService *RouteService) CreateRoute(route Route) (Route, error) {
 
 	return route, err
 }
+
+func (routeService *RouteService) GetRoute(id string) (Route, error) {
+	var route Route
+	filter := bson.M{"_id": id}
+	err := routeService.mongo.Database("routes").Collection("routes").FindOne(nil, filter).Decode(&route) // DECODE IS USED TO CHANGE ROUTE VARIABLE TO BSON
+
+	if err != nil {
+		return Route{}, err
+	}
+
+	return route, nil
+}
