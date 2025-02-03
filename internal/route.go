@@ -9,18 +9,30 @@ import (
 )
 
 type Directions struct {
-	Lat float64
-	Lng float64
+	Lat float64 `bson:"lat" json:"lat"`
+	Lng float64 `bson:"lng" json:"lng"`
 }
 
 type Route struct {
-	ID           string
-	Distance     int
-	Directions   []Directions
-	FreightPrice float64
+	ID           string       `bson:"_id" json:"id"`
+	Distance     int          `bson:"distance" json:"distance"`
+	Directions   []Directions `bson:"directions" json:"directions"`
+	FreightPrice float64      `bson:"freight_price" json:"freight_price"`
+}
+
+func NewRoute(id string, distance int, directions []Directions) *Route {
+	return &Route{
+		ID:         id,
+		Distance:   distance,
+		Directions: directions,
+	}
 }
 
 type FreightService struct{}
+
+func NewFreightService() *FreightService {
+	return &FreightService{}
+}
 
 func (freightService *FreightService) CalculateFreight(distance int) float64 {
 	// FAKE CALCULATION
@@ -32,7 +44,14 @@ type RouteService struct {
 	freightService *FreightService
 }
 
-func (routeService *RouteService) CreateRoute(route Route) (Route, error) {
+func NewRouteService(mongo *mongo.Client, freightService *FreightService) *RouteService {
+	return &RouteService{
+		mongo:          mongo,
+		freightService: freightService,
+	}
+}
+
+func (routeService *RouteService) CreateRoute(route *Route) (*Route, error) {
 	route.FreightPrice = routeService.freightService.CalculateFreight(route.Distance)
 
 	// MONGO UPDATE STATEMENT
@@ -54,7 +73,7 @@ func (routeService *RouteService) CreateRoute(route Route) (Route, error) {
 	_, err := routeService.mongo.Database("routes").Collection("rotues").UpdateOne(nil, filter, update, options)
 
 	if err != nil {
-		return Route{}, err
+		return nil, err
 	}
 
 	return route, err
