@@ -74,22 +74,18 @@ func RouteCreatedHanlder(event *RouteCreatedEvent, routeService *RouteService) (
 
 func DeliveryStartedHandler(event *DeliveryStartedEvent, routeService *RouteService, channel chan *DriverMovedEvent) error {
 	route, err := routeService.GetRoute(event.RouteID)
-
 	if err != nil {
 		return err
 	}
 
-	driverMovedEvent := NewDriverMovedEvent(route.ID, 0, 0) // Initial position
-
-	for _, direction := range route.Directions {
-		driverMovedEvent.RouteID = route.ID
-		driverMovedEvent.Lat = direction.Lat
-		driverMovedEvent.Lng = direction.Lng
-
-		time.Sleep(time.Second) // Simulate driver movement
-
-		channel <- driverMovedEvent // Send driver moved event
-	}
+	// Simulate driver movement
+	go func() {
+		for _, direction := range route.Directions {
+			driverMovedEvent := NewDriverMovedEvent(route.ID, direction.Lat, direction.Lng)
+			channel <- driverMovedEvent // Send driver moved event
+			time.Sleep(time.Second)     // Simulate driver movement
+		}
+	}()
 
 	return nil
 }
