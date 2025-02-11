@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/alexandrejuniorc/vehicle-tracking-student-simulator-ms/internal"
 	"github.com/segmentio/kafka-go"
@@ -12,8 +13,14 @@ import (
 )
 
 func main() {
-	mongoStr := "mongodb://admin:admin@localhost:27017/routes?authSource=admin"
-	mongoConnection, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoStr))
+	mongoURI := getEnv("MONGO_URI", "mongodb://admin:admin@mongo:27017/routes?authSource=admin")
+	kafkaBroker := getEnv("KAFKA_BROKER", "kafka:9092")
+	kafkaRouteTopic := getEnv("KAFKA_ROUTE_TOPIC", "route")
+	kafkaFreightTopic := getEnv("KAFKA_FREIGHT_TOPIC", "freight")
+	kafkaSimulationTopic := getEnv("KAFKA_SIMULATION_TOPIC", "simulation")
+	kafkaGroupID := getEnv("KAFKA_GROUP_ID", "route-group")
+
+	mongoConnection, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoURI))
 
 	if err != nil {
 		panic(err)
@@ -23,25 +30,23 @@ func main() {
 	routeService := internal.NewRouteService(mongoConnection, freightService)
 
 	channelDriverMoved := make(chan *internal.DriverMovedEvent)
-	kafkaBroker := "localhost:9092"
 
 	freightWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBroker),
-		Topic:    "freight",
+		Topic:    kafkaFreightTopic,
 		Balancer: &kafka.LeastBytes{},
 	}
 
 	simulatorWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBroker),
-		Topic:    "simulator",
+		Topic:    kafkaSimulationTopic,
 		Balancer: &kafka.LeastBytes{},
 	}
 
-	// Create a new reader with the kafka broker and topic
 	routeReader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: []string{kafkaBroker},
-		Topic:   "route",     // Topic name
-		GroupID: "simulator", // Consumer group name
+		Topic:   kafkaRouteTopic, // Topic name
+		GroupID: kafkaGroupID,    // Consumer group name
 	})
 
 	hub := internal.NewEventHub(routeService, mongoConnection, channelDriverMoved, freightWriter, simulatorWriter)
@@ -61,4 +66,11 @@ func main() {
 			}
 		}(messages.Value)
 	}
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
 }
