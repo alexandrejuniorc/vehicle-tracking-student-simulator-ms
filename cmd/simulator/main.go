@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/alexandrejuniorc/vehicle-tracking-student-simulator-ms/cmd/simulator/internal"
+	"github.com/alexandrejuniorc/vehicle-tracking-student-simulator-ms/internal"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
