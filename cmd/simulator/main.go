@@ -21,15 +21,15 @@ func main() {
 	kafkaGroupID := getEnv("KAFKA_GROUP_ID", "route-group")
 
 	mongoConnection, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoURI))
-
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
 
 	freightService := internal.NewFreightService()
 	routeService := internal.NewRouteService(mongoConnection, freightService)
 
 	channelDriverMoved := make(chan *internal.DriverMovedEvent)
+	channelFreightCalculated := make(chan *internal.FreightCalculatedEvent)
 
 	freightWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBroker),
@@ -37,7 +37,7 @@ func main() {
 		Balancer: &kafka.LeastBytes{},
 	}
 
-	simulatorWriter := &kafka.Writer{
+	simulationWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBroker),
 		Topic:    kafkaSimulationTopic,
 		Balancer: &kafka.LeastBytes{},
@@ -49,20 +49,26 @@ func main() {
 		GroupID: kafkaGroupID,    // Consumer group name
 	})
 
-	hub := internal.NewEventHub(routeService, mongoConnection, channelDriverMoved, freightWriter, simulatorWriter)
+	hub := internal.NewEventHub(
+		routeService,
+		mongoConnection,
+		channelDriverMoved,
+		channelFreightCalculated,
+		freightWriter,
+		simulationWriter,
+	)
 
-	fmt.Println("Starting simulator")
+	fmt.Println("Consuming events from 'route' topic...")
 	for {
 		messages, err := routeReader.ReadMessage(context.Background())
 		if err != nil {
-			log.Printf("error: %w", err)
+			log.Printf("Error reading message: %v\n", err)
 			continue
 		}
 
 		go func(message []byte) {
-			err = hub.HandleEvent(messages.Value)
-			if err != nil {
-				log.Printf("error: %w", err)
+			if err := hub.HandleEvent(message); err != nil {
+				log.Printf("Error handling event: %v\n", err)
 			}
 		}(messages.Value)
 	}

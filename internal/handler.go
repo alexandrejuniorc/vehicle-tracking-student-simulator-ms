@@ -1,6 +1,10 @@
 package internal
 
-import "time"
+import (
+	"time"
+
+	"go.mongodb.org/mongo-driver/mongo"
+)
 
 type RouteCreatedEvent struct {
 	EventName  string       `json:"event"`
@@ -60,19 +64,16 @@ func NewDriverMovedEvent(routeID string, lat, lng float64) *DriverMovedEvent {
 	}
 }
 
-func RouteCreatedHanlder(event *RouteCreatedEvent, routeService *RouteService) (*FreightCalculatedEvent, error) {
+func RouteCreatedHanlder(event *RouteCreatedEvent, routeService *RouteService, mongoClient *mongo.Client) (*FreightCalculatedEvent, error) {
 	route := NewRoute(event.RouteID, event.Distance, event.Directions)
 	routeCreated, err := routeService.CreateRoute(route)
-
 	if err != nil {
 		return nil, err
 	}
-
-	freightCalculatedEvent := NewFreightCalculatedEvent(routeCreated.ID, routeCreated.FreightPrice)
-	return freightCalculatedEvent, nil
+	return NewFreightCalculatedEvent(routeCreated.ID, routeCreated.FreightPrice), nil
 }
 
-func DeliveryStartedHandler(event *DeliveryStartedEvent, routeService *RouteService, channel chan *DriverMovedEvent) error {
+func DeliveryStartedHandler(event *DeliveryStartedEvent, routeService *RouteService, mongoClient *mongo.Client, channel chan *DriverMovedEvent) error {
 	route, err := routeService.GetRoute(event.RouteID)
 	if err != nil {
 		return err
@@ -83,9 +84,8 @@ func DeliveryStartedHandler(event *DeliveryStartedEvent, routeService *RouteServ
 		for _, direction := range route.Directions {
 			driverMovedEvent := NewDriverMovedEvent(route.ID, direction.Lat, direction.Lng)
 			channel <- driverMovedEvent // Send driver moved event
-			time.Sleep(time.Second)     // Simulate driver movement
+			time.Sleep(1 * time.Second) // Simulate driver movement
 		}
 	}()
-
 	return nil
 }
