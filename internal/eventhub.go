@@ -12,71 +12,70 @@ import (
 )
 
 type EventHub struct {
-	routeService             *RouteService
-	mongoClient              *mongo.Client
-	channelDriverMoved       chan *DriverMovedEvent
-	channelFreightCalculated chan *FreightCalculatedEvent
-	freightWriter            *kafka.Writer
-	simulationWriter         *kafka.Writer
+	routeService        *RouteService
+	mongoClient         *mongo.Client
+	chDriverMoved       chan *DriverMovedEvent
+	chFrieghtCalculated chan *FreightCalculatedEvent
+	freightWriter       *kafka.Writer
+	simulationWriter    *kafka.Writer
 }
 
 func NewEventHub(
 	routeService *RouteService,
 	mongoClient *mongo.Client,
-	channelDriverMoved chan *DriverMovedEvent,
-	channelFreightCalculated chan *FreightCalculatedEvent,
-	freightWriter,
+	chDriverMoved chan *DriverMovedEvent,
+	chFreightCalculated chan *FreightCalculatedEvent,
+	freightWriter *kafka.Writer,
 	simulationWriter *kafka.Writer,
 ) *EventHub {
 	return &EventHub{
-		routeService:             routeService,
-		mongoClient:              mongoClient,
-		channelDriverMoved:       channelDriverMoved,
-		channelFreightCalculated: channelFreightCalculated,
-		freightWriter:            freightWriter,
-		simulationWriter:         simulationWriter,
+		routeService:        routeService,
+		mongoClient:         mongoClient,
+		chDriverMoved:       chDriverMoved,
+		chFrieghtCalculated: chFreightCalculated,
+		freightWriter:       freightWriter,
+		simulationWriter:    simulationWriter,
 	}
 }
 
-func (eventHub *EventHub) HandleEvent(message []byte) error {
+func (eh *EventHub) HandleEvent(msg []byte) error {
 	var baseEvent struct {
 		EventName string `json:"event"`
 	}
 
-	if err := json.Unmarshal(message, &baseEvent); err != nil {
+	if err := json.Unmarshal(msg, &baseEvent); err != nil {
 		return fmt.Errorf("error unmarshaling base event: %w", err)
 	}
 
 	switch baseEvent.EventName {
 	case "RouteCreated":
 		var event RouteCreatedEvent
-		if err := json.Unmarshal(message, &event); err != nil {
+		if err := json.Unmarshal(msg, &event); err != nil {
 			return fmt.Errorf("error unmarshaling RouteCreatedEvent: %w", err)
 		}
-		return eventHub.HandleRouteCreated(event)
+		return eh.handleRouteCreated(event)
 
 	case "DeliveryStarted":
 		var event DeliveryStartedEvent
-		if err := json.Unmarshal(message, &event); err != nil {
+		if err := json.Unmarshal(msg, &event); err != nil {
 			return fmt.Errorf("error unmarshaling DeliveryStartedEvent: %w", err)
 		}
-		return eventHub.HandleDeliveryStarted(event)
+		return eh.handleDeliveryStarted(event)
 
 	default:
-		return errors.New("unknown event")
+		return errors.New("unknown event type")
 	}
 }
 
-func (eventHub *EventHub) HandleRouteCreated(event RouteCreatedEvent) error {
-	freightCalculatedEvent, err := RouteCreatedHanlder(&event, eventHub.routeService, eventHub.mongoClient)
+func (eh *EventHub) handleRouteCreated(event RouteCreatedEvent) error {
+	freightCalculatedEvent, err := RouteCreatedHandler(&event, eh.routeService, eh.mongoClient)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("FreightCalculatedEvent created: %+v\n", freightCalculatedEvent)
 
-	value, _ := json.Marshal(freightCalculatedEvent) // Convert event to JSON
-
-	if err := eventHub.freightWriter.WriteMessages(context.Background(), kafka.Message{
+	value, _ := json.Marshal(freightCalculatedEvent)
+	if err := eh.freightWriter.WriteMessages(context.Background(), kafka.Message{
 		Key:   []byte(freightCalculatedEvent.RouteID),
 		Value: value,
 	}); err != nil {
@@ -85,8 +84,8 @@ func (eventHub *EventHub) HandleRouteCreated(event RouteCreatedEvent) error {
 	return nil
 }
 
-func (eventHub *EventHub) HandleDeliveryStarted(event DeliveryStartedEvent) error {
-	err := DeliveryStartedHandler(&event, eventHub.routeService, eventHub.mongoClient, eventHub.channelDriverMoved)
+func (eh *EventHub) handleDeliveryStarted(event DeliveryStartedEvent) error {
+	err := DeliveryStartedHandler(&event, eh.routeService, eh.mongoClient, eh.chDriverMoved)
 	if err != nil {
 		return err
 	}
@@ -94,9 +93,9 @@ func (eventHub *EventHub) HandleDeliveryStarted(event DeliveryStartedEvent) erro
 	go func() {
 		for {
 			select {
-			case movedEvent := <-eventHub.channelDriverMoved:
+			case movedEvent := <-eh.chDriverMoved:
 				value, _ := json.Marshal(movedEvent)
-				if err := eventHub.simulationWriter.WriteMessages(context.Background(), kafka.Message{
+				if err := eh.simulationWriter.WriteMessages(context.Background(), kafka.Message{
 					Key:   []byte(movedEvent.RouteID),
 					Value: value,
 				}); err != nil {

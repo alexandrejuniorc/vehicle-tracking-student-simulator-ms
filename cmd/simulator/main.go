@@ -6,10 +6,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/alexandrejuniorc/vehicle-tracking-student-simulator-ms/internal"
-	"github.com/segmentio/kafka-go"
+	"github.com/alexandrejuniorc/vehicle-tracking-student-simulator-ms/cmd/simulator/internal"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/segmentio/kafka-go"
 )
 
 func main() {
@@ -28,54 +29,54 @@ func main() {
 	freightService := internal.NewFreightService()
 	routeService := internal.NewRouteService(mongoConnection, freightService)
 
-	channelDriverMoved := make(chan *internal.DriverMovedEvent)
-	channelFreightCalculated := make(chan *internal.FreightCalculatedEvent)
+	chDriverMoved := make(chan *internal.DriverMovedEvent)
+	chFreightCalculated := make(chan *internal.FreightCalculatedEvent)
 
 	freightWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBroker),
 		Topic:    kafkaFreightTopic,
 		Balancer: &kafka.LeastBytes{},
 	}
-
 	simulationWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBroker),
 		Topic:    kafkaSimulationTopic,
 		Balancer: &kafka.LeastBytes{},
 	}
 
-	routeReader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{kafkaBroker},
-		Topic:   kafkaRouteTopic, // Topic name
-		GroupID: kafkaGroupID,    // Consumer group name
-	})
-
 	hub := internal.NewEventHub(
 		routeService,
 		mongoConnection,
-		channelDriverMoved,
-		channelFreightCalculated,
+		chDriverMoved,
+		chFreightCalculated,
 		freightWriter,
 		simulationWriter,
 	)
 
+	routeReader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers: []string{kafkaBroker},
+		Topic:   kafkaRouteTopic,
+		GroupID: kafkaGroupID,
+	})
+
 	fmt.Println("Consuming events from 'route' topic...")
+
 	for {
-		messages, err := routeReader.ReadMessage(context.Background())
+		m, err := routeReader.ReadMessage(context.Background())
 		if err != nil {
 			log.Printf("Error reading message: %v\n", err)
 			continue
 		}
 
-		go func(message []byte) {
-			if err := hub.HandleEvent(message); err != nil {
+		go func(msg []byte) {
+			if err := hub.HandleEvent(msg); err != nil {
 				log.Printf("Error handling event: %v\n", err)
 			}
-		}(messages.Value)
+		}(m.Value)
 	}
 }
 
 func getEnv(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
+	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
 	return fallback

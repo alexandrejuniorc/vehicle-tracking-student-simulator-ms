@@ -21,8 +21,8 @@ type Route struct {
 	FreightPrice float64      `bson:"freight_price" json:"freight_price"`
 }
 
-func NewRoute(id string, distance int, directions []Directions) *Route {
-	return &Route{
+func NewRoute(id string, distance int, directions []Directions) Route {
+	return Route{
 		ID:         id,
 		Distance:   distance,
 		Directions: directions,
@@ -31,13 +31,13 @@ func NewRoute(id string, distance int, directions []Directions) *Route {
 
 type RouteService struct {
 	mongo          *mongo.Client
-	freightService *FreightService
+	FreightService *FreightService
 }
 
 func NewRouteService(mongo *mongo.Client, freightService *FreightService) *RouteService {
 	return &RouteService{
 		mongo:          mongo,
-		freightService: freightService,
+		FreightService: freightService,
 	}
 }
 
@@ -47,41 +47,37 @@ func NewFreightService() *FreightService {
 	return &FreightService{}
 }
 
-func (freightService *FreightService) Calculate(distance int) float64 {
-	// FAKE CALCULATION
+func (fs *FreightService) Calculate(distance int) float64 {
 	return math.Floor((float64(distance)*0.15+0.3)*100) / 100
 }
 
-func (routeService *RouteService) CreateRoute(route *Route) (*Route, error) {
-	freightCost := routeService.freightService.Calculate(route.Distance)
+func (rs *RouteService) CreateRoute(route Route) (Route, error) {
+	freightCost := rs.FreightService.Calculate(route.Distance)
 	route.FreightPrice = freightCost
 	fmt.Printf("Calculated freight cost: %.2f\n", freightCost)
 
-	// MONGO UPDATE STATEMENT
 	update := bson.M{
 		"$set": bson.M{
 			"distance":      route.Distance,
 			"directions":    route.Directions,
-			"freight_price": route.FreightPrice,
+			"freight_price": freightCost,
 		},
 	}
 
-	// MONGO FILTER
 	filter := bson.M{"_id": route.ID}
 
-	// IF NOT EXISTS CREATE NEW ROUTE
-	options := options.Update().SetUpsert(true)
+	// Upsert option to insert if not exists
+	opts := options.Update().SetUpsert(true)
 
-	// UPDATE ROUTE
-	_, err := routeService.mongo.Database("routes").Collection("rotues").UpdateOne(nil, filter, update, options)
+	_, err := rs.mongo.Database("routes").Collection("routes").UpdateOne(nil, filter, update, opts)
 
 	return route, err
 }
 
-func (routeService *RouteService) GetRoute(id string) (Route, error) {
+func (rs *RouteService) GetRoute(id string) (Route, error) {
 	var route Route
 	filter := bson.M{"_id": id}
-	err := routeService.mongo.Database("routes").Collection("routes").FindOne(nil, filter).Decode(&route) // DECODE IS USED TO CHANGE ROUTE VARIABLE TO BSON
+	err := rs.mongo.Database("routes").Collection("routes").FindOne(nil, filter).Decode(&route)
 	fmt.Printf("Found route: %+v\n", route)
 	return route, err
 }
